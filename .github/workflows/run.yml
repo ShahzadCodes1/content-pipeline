@@ -2,33 +2,37 @@ name: Content Pipeline
 
 on:
   schedule:
-    - cron: '0 6 * * *'
-    - cron: '0 9 * * *'
-    - cron: '0 12 * * *'
-    - cron: '0 15 * * *'
-    - cron: '0 18 * * *'
-  workflow_dispatch:
+    - cron: '0 6 * * *'    # 9:00 AM Bahrain (UTC+3)
+    - cron: '0 9 * * *'    # 12:00 PM Bahrain
+    - cron: '0 12 * * *'   # 3:00 PM Bahrain
+    - cron: '0 15 * * *'   # 6:00 PM Bahrain
+    - cron: '0 18 * * *'   # 9:00 PM Bahrain
+  workflow_dispatch:        # run manually from Actions tab anytime
 
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
 
-      - name: Set up Python
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.11
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install google-api-python-client google-auth-oauthlib instagrapi requests schedule
+        run: |
+          pip install google-api-python-client google-auth-oauthlib instagrapi requests schedule
 
       - name: Create output folder
         run: mkdir -p generated_shots
 
       - name: Run pipeline
         env:
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-          INSTAGRAM_USER: ${{ secrets.INSTAGRAM_USER }}
-          INSTAGRAM_PASS: ${{ secrets.INSTAGRAM_PASS }}
+          YOUTUBE_API_KEY:   ${{ secrets.YOUTUBE_API_KEY }}
+          INSTAGRAM_USER:    ${{ secrets.INSTAGRAM_USER }}
+          INSTAGRAM_PASS:    ${{ secrets.INSTAGRAM_PASS }}
+          INSTAGRAM_SESSION: ${{ secrets.INSTAGRAM_SESSION }}
         run: python pipeline.py --once
