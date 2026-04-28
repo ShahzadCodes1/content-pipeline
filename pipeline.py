@@ -521,26 +521,27 @@ def full_pipeline():
 # SCHEDULER — runs 5 times per day
 # =============================================================
 
-if __name__ == "__main__":
-    log.info("Auto Content Pipeline starting...")
-    log.info("Schedule: 09:00, 12:00, 15:00, 18:00, 21:00 daily")
-
-    # Create output folder
+if __name__ == '__main__':
+    import sys
     Path(OUTPUT_FOLDER).mkdir(exist_ok=True)
 
-    # Schedule 5 times per day
-    schedule.every().day.at("09:00").do(full_pipeline)
-    schedule.every().day.at("12:00").do(full_pipeline)
-    schedule.every().day.at("15:00").do(full_pipeline)
-    schedule.every().day.at("18:00").do(full_pipeline)
-    schedule.every().day.at("21:00").do(full_pipeline)
+    if os.environ.get('YOUTUBE_API_KEY'):
+        YOUTUBE_API_KEY = os.environ['YOUTUBE_API_KEY']
+        INSTAGRAM_USER  = os.environ['INSTAGRAM_USER']
+        INSTAGRAM_PASS  = os.environ['INSTAGRAM_PASS']
 
-    # Optional: run once immediately on start
-    run_now = input("Run pipeline now? (y/n): ").strip().lower()
-    if run_now == "y":
+    if '--once' in sys.argv:
         full_pipeline()
-
-    log.info("Scheduler running. Press Ctrl+C to stop.")
-    while True:
-        schedule.run_pending()
-        time.sleep(30)
+    else:
+        schedule.every().day.at('09:00').do(full_pipeline)
+        schedule.every().day.at('12:00').do(full_pipeline)
+        schedule.every().day.at('15:00').do(full_pipeline)
+        schedule.every().day.at('18:00').do(full_pipeline)
+        schedule.every().day.at('21:00').do(full_pipeline)
+        run_now = input('Run pipeline now? (y/n): ').strip().lower()
+        if run_now == 'y':
+            full_pipeline()
+        log.info('Scheduler running. Press Ctrl+C to stop.')
+        while True:
+            schedule.run_pending()
+            time.sleep(30)
