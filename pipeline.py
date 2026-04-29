@@ -65,6 +65,7 @@ log = logging.getLogger(__name__)
 
 YOUTUBE_API_KEY   = os.environ.get("YOUTUBE_API_KEY", "YOUR_YOUTUBE_API_KEY_HERE")
 YOUTUBE_TOKEN     = os.environ.get("YOUTUBE_TOKEN", "")   # JSON string from GitHub Secret
+HF_TOKEN          = os.environ.get("HF_TOKEN", "")        # Hugging Face token
 
 OUTPUT_FOLDER     = "generated_shots"
 VIDEO_FOLDER      = "generated_videos"
@@ -260,94 +261,134 @@ def generate_ai_content(trend_prompt=None):
 
 
 def generate_text_content(trend_prompt: str):
-    """Generate image prompt + quote using Pollinations text AI with retry."""
-    clean   = trend_prompt.strip()[:1500]
-    encoded = urllib.parse.quote(clean)
-    url     = f"https://text.pollinations.ai/{encoded}?model=openai&seed={random.randint(1,9999)}"
+    """
+    Smart keyword-based content selector.
+    Matches trending topics to relevant luxury scenes.
+    No external API needed — instant, never rate limited.
+    """
+    t = trend_prompt.lower()
 
-    for attempt in range(1, 4):
-        try:
-            wait = 10 * attempt
-            log.info(f"Pollinations text attempt {attempt}/3 (waiting {wait}s first)...")
-            time.sleep(wait)
+    if any(w in t for w in ["music", "song", "video", "gaga", "rapper", "album", "official"]):
+        pool = [
+            ("Black grand piano in empty luxury penthouse, floor to ceiling windows, city skyline at dusk, cinematic 8K", "Create what they can only dream of."),
+            ("Penthouse rooftop at night, city lights below, champagne glass on glass railing, cinematic 8K luxury", "The sound of success is silence."),
+            ("Modern recording studio with city view at night, luxury interior, warm lighting, cinematic 8K", "Your art is your empire."),
+        ]
+    elif any(w in t for w in ["sport", "nba", "nfl", "celtics", "lakers", "game", "basketball", "football"]):
+        pool = [
+            ("Empty luxury sports car garage, row of Ferraris and Lamborghinis, dramatic spotlighting, cinematic 8K", "Champions are made before the game begins."),
+            ("Rooftop infinity pool overlooking city at night, luxury cabana, warm light, reflection, cinematic 8K", "Winners prepare while others sleep."),
+            ("Penthouse gym overlooking city skyline at sunrise, luxury equipment, dramatic light, cinematic 8K", "Discipline is the bridge to your dreams."),
+        ]
+    elif any(w in t for w in ["movie", "trailer", "film", "series", "season", "official teaser"]):
+        pool = [
+            ("Private jet interior at golden hour, cream leather seats, champagne, clouds below oval window, cinematic 8K", "Your story is worth living in full."),
+            ("Luxury home cinema room, velvet seats, city view through glass wall, cinematic lighting 8K", "Build the life worth watching."),
+            ("Yacht deck Mediterranean sea golden hour, champagne on table, luxury lifestyle, cinematic 8K", "Every scene of your life should be worth replaying."),
+        ]
+    elif any(w in t for w in ["news", "america", "world", "politics", "breaking"]):
+        pool = [
+            ("Matte black Lamborghini on rain-soaked empty highway at night, neon reflections, cinematic 8K", "While they talk you build."),
+            ("Empty modern boardroom top floor, panoramic city view at dawn, cinematic 8K luxury photography", "The news reports the world. You change it."),
+            ("Luxury penthouse study at night, city lights below, whiskey glass, leather chair, cinematic 8K", "Stay focused. The world is loud on purpose."),
+        ]
+    else:
+        pool = [
+            ("Matte black Lamborghini on rain-soaked highway at night, neon city reflections, cinematic 8K ultra-realistic", "Success is built in silence."),
+            ("Luxury penthouse infinity pool Dubai golden hour, glass skyscrapers, warm amber light, cinematic 8K", "Your vision becomes your reality."),
+            ("Private jet interior sunset, cream leather seats, champagne glass, clouds below, cinematic 8K", "Freedom is earned not given."),
+            ("Empty mansion living room dawn, floor to ceiling windows, city skyline, cinematic 8K", "Build the life they stare at."),
+            ("Black Rolls Royce foggy mountain road sunrise, ultra-realistic cinematic photography 8K", "Discipline creates destiny."),
+            ("Yacht deck at golden hour, Mediterranean sea, champagne on table, luxury lifestyle, cinematic 8K", "The ocean belongs to those who dare."),
+            ("Modern mansion exterior at night, illuminated pool, palm trees, luxury real estate, cinematic 8K", "Your dream home is a decision away."),
+            ("Rooftop penthouse terrace Dubai skyline at dusk, outdoor luxury furniture, city glow, cinematic 8K", "Elevation is a mindset first."),
+        ]
 
-            r = requests.get(url, timeout=60)
-
-            if r.status_code == 429:
-                log.warning(f"Rate limited, waiting {wait*2}s...")
-                time.sleep(wait * 2)
-                continue
-
-            r.raise_for_status()
-
-            text         = r.text.strip()
-            image_prompt = ""
-            quote        = ""
-
-            for line in text.split("\n"):
-                line = line.strip()
-                if line.upper().startswith("IMAGE:"):
-                    image_prompt = line[6:].strip().strip("*").strip()
-                elif line.upper().startswith("QUOTE:"):
-                    quote = line[6:].strip().strip("*").strip().strip('"')
-
-            if not image_prompt:
-                image_prompt = "Cinematic luxury penthouse at golden hour, glass skyscrapers, 8K ultra-realistic"
-            if not quote:
-                quote = "Build the life they stare at."
-
-            return image_prompt[:400], quote[:80]
-
-        except Exception as e:
-            log.error(f"Pollinations text attempt {attempt} error: {e}")
-            if attempt < 3:
-                time.sleep(15)
-
-    # All retries failed — use fallback
-    log.warning("All Pollinations text attempts failed, using fallback")
-    fallbacks = [
-        ("Matte black Lamborghini on rain-soaked highway at night, neon city reflections, cinematic 8K ultra-realistic", "Success is built in silence."),
-        ("Luxury penthouse infinity pool Dubai golden hour, glass skyscrapers, warm light, cinematic 8K", "Your vision becomes your reality."),
-        ("Private jet interior sunset, cream leather seats, champagne glass, clouds below, cinematic 8K", "Freedom is earned not given."),
-        ("Empty mansion living room dawn, floor to ceiling windows, city skyline, cinematic 8K", "Build the life they stare at."),
-        ("Black Rolls Royce foggy mountain road sunrise, ultra-realistic cinematic photography 8K", "Discipline creates destiny."),
-    ]
-    return random.choice(fallbacks)
+    image_prompt, quote = random.choice(pool)
+    log.info("Content selected via keyword matching")
+    return image_prompt, quote
 
 
 def generate_image(prompt: str, output_path: str, retries: int = 3) -> str | None:
-    """Generate image via Pollinations FLUX model (free, no key)."""
-    encoded = urllib.parse.quote(prompt)
-    seed    = random.randint(1, 99999)
-    url     = (
-        f"https://image.pollinations.ai/prompt/{encoded}"
-        f"?width={IMG_WIDTH}&height={IMG_HEIGHT}"
-        f"&model=flux&seed={seed}&enhance=true&nologo=true"
+    """
+    Generate image via Hugging Face Inference API (free, no rate limits on GitHub IPs).
+    Model: stabilityai/stable-diffusion-xl-base-1.0
+    Free tier: unlimited requests with HF token.
+    """
+    # Enhance prompt for luxury cinematic style
+    full_prompt = (
+        f"{prompt}, "
+        f"cinematic photography, luxury lifestyle, "
+        f"8K ultra-realistic, dramatic lighting, "
+        f"professional commercial photography, "
+        f"sharp focus, high detail"
     )
+
+    api_url = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
+    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+    payload = {
+        "inputs": full_prompt,
+        "parameters": {
+            "width":               768,
+            "height":              1344,   # closest to 9:16 vertical
+            "num_inference_steps": 25,
+            "guidance_scale":      7.5,
+            "seed":                random.randint(1, 99999),
+        }
+    }
 
     for attempt in range(1, retries + 1):
         try:
-            wait = 15 * attempt
-            log.info(f"Image generation attempt {attempt}/{retries} (waiting {wait}s)...")
-            time.sleep(wait)
-            r = requests.get(url, timeout=90)
+            log.info(f"HF image generation attempt {attempt}/{retries}...")
+            r = requests.post(api_url, headers=headers, json=payload, timeout=120)
+
+            # Model loading — wait and retry
+            if r.status_code == 503:
+                wait = 30
+                log.info(f"Model loading, waiting {wait}s...")
+                time.sleep(wait)
+                continue
 
             if r.status_code == 200 and len(r.content) > 10000:
-                with open(output_path, "wb") as f:
-                    f.write(r.content)
+                # Resize to exact 1080x1920
+                img = Image.open(io.BytesIO(r.content)).convert("RGB")
+                img = img.resize((IMG_WIDTH, IMG_HEIGHT), Image.LANCZOS)
+                img.save(output_path, "JPEG", quality=95)
                 log.info(f"Image saved ({len(r.content)//1024}KB): {output_path}")
                 return output_path
             else:
-                log.warning(f"Bad response: {r.status_code}")
+                log.warning(f"HF bad response: {r.status_code} — {r.text[:200]}")
 
         except requests.Timeout:
             log.warning(f"Timeout on attempt {attempt}")
         except Exception as e:
-            log.error(f"Image error: {e}")
+            log.error(f"HF image error: {e}")
 
         if attempt < retries:
-            time.sleep(10 * attempt)
+            time.sleep(15)
 
+    log.warning("HF failed, trying Pollinations as backup...")
+    return generate_image_pollinations(prompt, output_path)
+
+
+def generate_image_pollinations(prompt: str, output_path: str) -> str | None:
+    """Backup image generator using Pollinations.ai."""
+    try:
+        encoded = urllib.parse.quote(prompt)
+        url     = (
+            f"https://image.pollinations.ai/prompt/{encoded}"
+            f"?width={IMG_WIDTH}&height={IMG_HEIGHT}"
+            f"&model=flux&seed={random.randint(1,99999)}&nologo=true"
+        )
+        log.info("Trying Pollinations backup...")
+        r = requests.get(url, timeout=90)
+        if r.status_code == 200 and len(r.content) > 10000:
+            with open(output_path, "wb") as f:
+                f.write(r.content)
+            log.info(f"Pollinations backup saved: {output_path}")
+            return output_path
+    except Exception as e:
+        log.error(f"Pollinations backup failed: {e}")
     return None
 
 
