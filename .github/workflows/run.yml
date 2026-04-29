@@ -30,7 +30,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install google-api-python-client google-auth-oauthlib \
-                      requests schedule moviepy pillow numpy
+                      requests schedule moviepy pillow numpy huggingface_hub
 
       - name: Create output folders
         run: |
