@@ -7,7 +7,7 @@ on:
     - cron: '0 12 * * *'   # 3:00 PM Bahrain
     - cron: '0 15 * * *'   # 6:00 PM Bahrain
     - cron: '0 18 * * *'   # 9:00 PM Bahrain
-  workflow_dispatch:        # run manually from Actions tab anytime
+  workflow_dispatch:        # run manually anytime from Actions tab
 
 jobs:
   run-pipeline:
@@ -22,17 +22,23 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Install system dependencies (for moviepy + video)
         run: |
-          pip install google-api-python-client google-auth-oauthlib instagrapi requests schedule
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-liberation
 
-      - name: Create output folder
-        run: mkdir -p generated_shots
+      - name: Install Python dependencies
+        run: |
+          pip install google-api-python-client google-auth-oauthlib \
+                      requests schedule moviepy pillow numpy
+
+      - name: Create output folders
+        run: |
+          mkdir -p generated_shots
+          mkdir -p generated_videos
 
       - name: Run pipeline
         env:
-          YOUTUBE_API_KEY:   ${{ secrets.YOUTUBE_API_KEY }}
-          INSTAGRAM_USER:    ${{ secrets.INSTAGRAM_USER }}
-          INSTAGRAM_PASS:    ${{ secrets.INSTAGRAM_PASS }}
-          INSTAGRAM_SESSION: ${{ secrets.INSTAGRAM_SESSION }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          YOUTUBE_TOKEN:   ${{ secrets.YOUTUBE_TOKEN }}
         run: python pipeline.py --once
