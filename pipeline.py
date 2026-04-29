@@ -311,61 +311,42 @@ def generate_text_content(trend_prompt: str):
 
 def generate_image(prompt: str, output_path: str, retries: int = 3) -> str | None:
     """
-    Generate image via Hugging Face Inference API (free, no rate limits on GitHub IPs).
-    Model: stabilityai/stable-diffusion-xl-base-1.0
-    Free tier: unlimited requests with HF token.
+    Generate image via Hugging Face InferenceClient (correct 2026 method).
+    Uses huggingface_hub library with FLUX.1-dev model.
+    Free with HF token.
     """
-    # Enhance prompt for luxury cinematic style
     full_prompt = (
-        f"{prompt}, "
-        f"cinematic photography, luxury lifestyle, "
-        f"8K ultra-realistic, dramatic lighting, "
-        f"professional commercial photography, "
-        f"sharp focus, high detail"
+        f"{prompt}, cinematic photography, luxury lifestyle, "
+        f"8K ultra-realistic, dramatic lighting, sharp focus, high detail"
     )
 
-    api_url = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
-    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-    payload = {
-        "inputs": full_prompt,
-        "parameters": {
-            "width":               768,
-            "height":              1344,   # closest to 9:16 vertical
-            "num_inference_steps": 25,
-            "guidance_scale":      7.5,
-            "seed":                random.randint(1, 99999),
-        }
-    }
+    from huggingface_hub import InferenceClient
+    client = InferenceClient(api_key=HF_TOKEN)
 
     for attempt in range(1, retries + 1):
         try:
             log.info(f"HF image generation attempt {attempt}/{retries}...")
-            r = requests.post(api_url, headers=headers, json=payload, timeout=120)
 
-            # Model loading — wait and retry
-            if r.status_code == 503:
-                wait = 30
-                log.info(f"Model loading, waiting {wait}s...")
-                time.sleep(wait)
-                continue
+            # Returns a PIL Image object directly
+            # Using FLUX.1-schnell — free, no billing required
+            image = client.text_to_image(
+                full_prompt,
+                model="black-forest-labs/FLUX.1-schnell",
+            )
 
-            if r.status_code == 200 and len(r.content) > 10000:
-                # Resize to exact 1080x1920
-                img = Image.open(io.BytesIO(r.content)).convert("RGB")
-                img = img.resize((IMG_WIDTH, IMG_HEIGHT), Image.LANCZOS)
-                img.save(output_path, "JPEG", quality=95)
-                log.info(f"Image saved ({len(r.content)//1024}KB): {output_path}")
-                return output_path
-            else:
-                log.warning(f"HF bad response: {r.status_code} — {r.text[:200]}")
+            # Resize to exact 1080x1920 vertical
+            image = image.convert("RGB")
+            image = image.resize((IMG_WIDTH, IMG_HEIGHT), Image.LANCZOS)
+            image.save(output_path, "JPEG", quality=95)
 
-        except requests.Timeout:
-            log.warning(f"Timeout on attempt {attempt}")
+            log.info(f"Image saved: {output_path}")
+            return output_path
+
         except Exception as e:
-            log.error(f"HF image error: {e}")
-
-        if attempt < retries:
-            time.sleep(15)
+            log.error(f"HF attempt {attempt} error: {e}")
+            if attempt < retries:
+                log.info("Waiting 20s before retry...")
+                time.sleep(20)
 
     log.warning("HF failed, trying Pollinations as backup...")
     return generate_image_pollinations(prompt, output_path)
