@@ -409,11 +409,7 @@ def create_youtube_short(image_path: str, quote: str, output_path: str) -> str |
     Effect: slow Ken Burns zoom in + motivational text overlay
     """
     try:
-        from moviepy.editor import (
-            ImageClip, TextClip, CompositeVideoClip,
-            AudioFileClip, concatenate_videoclips
-        )
-        from moviepy.video.fx.all import fadein, fadeout
+        from moviepy import ImageClip, TextClip, CompositeVideoClip
 
         log.info("Building video with moviepy...")
 
