@@ -260,38 +260,59 @@ def generate_ai_content(trend_prompt=None):
 
 
 def generate_text_content(trend_prompt: str):
-    """Generate image prompt + quote using Pollinations text AI."""
-    try:
-        clean   = trend_prompt.strip()[:1500]
-        encoded = urllib.parse.quote(clean)
-        url     = f"https://text.pollinations.ai/{encoded}?model=openai&seed={random.randint(1,9999)}"
-        r       = requests.get(url, timeout=45)
-        r.raise_for_status()
+    """Generate image prompt + quote using Pollinations text AI with retry."""
+    clean   = trend_prompt.strip()[:1500]
+    encoded = urllib.parse.quote(clean)
+    url     = f"https://text.pollinations.ai/{encoded}?model=openai&seed={random.randint(1,9999)}"
 
-        text         = r.text.strip()
-        image_prompt = ""
-        quote        = ""
+    for attempt in range(1, 4):
+        try:
+            wait = 10 * attempt
+            log.info(f"Pollinations text attempt {attempt}/3 (waiting {wait}s first)...")
+            time.sleep(wait)
 
-        for line in text.split("\n"):
-            line = line.strip()
-            if line.upper().startswith("IMAGE:"):
-                image_prompt = line[6:].strip().strip("*").strip()
-            elif line.upper().startswith("QUOTE:"):
-                quote = line[6:].strip().strip("*").strip().strip('"')
+            r = requests.get(url, timeout=60)
 
-        if not image_prompt:
-            image_prompt = "Cinematic luxury penthouse at golden hour, glass skyscrapers, 8K ultra-realistic"
-        if not quote:
-            quote = "Build the life they stare at."
+            if r.status_code == 429:
+                log.warning(f"Rate limited, waiting {wait*2}s...")
+                time.sleep(wait * 2)
+                continue
 
-        return image_prompt[:400], quote[:80]
+            r.raise_for_status()
 
-    except Exception as e:
-        log.error(f"Pollinations text error: {e}")
-        return (
-            "Cinematic luxury penthouse at golden hour, glass skyscrapers, 8K ultra-realistic",
-            "Success is built in silence."
-        )
+            text         = r.text.strip()
+            image_prompt = ""
+            quote        = ""
+
+            for line in text.split("\n"):
+                line = line.strip()
+                if line.upper().startswith("IMAGE:"):
+                    image_prompt = line[6:].strip().strip("*").strip()
+                elif line.upper().startswith("QUOTE:"):
+                    quote = line[6:].strip().strip("*").strip().strip('"')
+
+            if not image_prompt:
+                image_prompt = "Cinematic luxury penthouse at golden hour, glass skyscrapers, 8K ultra-realistic"
+            if not quote:
+                quote = "Build the life they stare at."
+
+            return image_prompt[:400], quote[:80]
+
+        except Exception as e:
+            log.error(f"Pollinations text attempt {attempt} error: {e}")
+            if attempt < 3:
+                time.sleep(15)
+
+    # All retries failed — use fallback
+    log.warning("All Pollinations text attempts failed, using fallback")
+    fallbacks = [
+        ("Matte black Lamborghini on rain-soaked highway at night, neon city reflections, cinematic 8K ultra-realistic", "Success is built in silence."),
+        ("Luxury penthouse infinity pool Dubai golden hour, glass skyscrapers, warm light, cinematic 8K", "Your vision becomes your reality."),
+        ("Private jet interior sunset, cream leather seats, champagne glass, clouds below, cinematic 8K", "Freedom is earned not given."),
+        ("Empty mansion living room dawn, floor to ceiling windows, city skyline, cinematic 8K", "Build the life they stare at."),
+        ("Black Rolls Royce foggy mountain road sunrise, ultra-realistic cinematic photography 8K", "Discipline creates destiny."),
+    ]
+    return random.choice(fallbacks)
 
 
 def generate_image(prompt: str, output_path: str, retries: int = 3) -> str | None:
@@ -306,7 +327,9 @@ def generate_image(prompt: str, output_path: str, retries: int = 3) -> str | Non
 
     for attempt in range(1, retries + 1):
         try:
-            log.info(f"Image generation attempt {attempt}/{retries}...")
+            wait = 15 * attempt
+            log.info(f"Image generation attempt {attempt}/{retries} (waiting {wait}s)...")
+            time.sleep(wait)
             r = requests.get(url, timeout=90)
 
             if r.status_code == 200 and len(r.content) > 10000:
