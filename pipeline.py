@@ -405,144 +405,143 @@ Stay focused. Stay consistent. The results will come.
 
 def create_youtube_short(image_path: str, quote: str, output_path: str) -> str | None:
     """
-    Creates a 30-second YouTube Short from a static image.
-    Effect: slow Ken Burns zoom in + motivational text overlay
+    Creates a 30-second YouTube Short using PIL + ffmpeg directly.
+    No moviepy API changes to worry about — uses raw ffmpeg subprocess.
+    Adds text overlay and Ken Burns zoom effect.
     """
     try:
-        from moviepy import ImageClip, TextClip, CompositeVideoClip
+        import subprocess
+        import tempfile
 
-        log.info("Building video with moviepy...")
+        log.info("Building video with ffmpeg...")
 
-        # Load and prepare image
-        img        = Image.open(image_path).convert("RGB")
-        img        = img.resize((IMG_WIDTH, IMG_HEIGHT), Image.LANCZOS)
-        img_array  = np.array(img)
+        # Load and resize image to exact 1080x1920
+        img = Image.open(image_path).convert("RGB")
+        img = img.resize((IMG_WIDTH, IMG_HEIGHT), Image.LANCZOS)
 
-        # --- Main clip: Ken Burns slow zoom ---
-        duration   = VIDEO_DURATION
-        fps        = VIDEO_FPS
-        zoom_start = 1.0
-        zoom_end   = 1.15
+        # Add text overlay directly on image using PIL
+        draw = ImageDraw.Draw(img)
 
-        def make_frame(t):
-            progress = t / duration
-            zoom     = zoom_start + (zoom_end - zoom_start) * progress
-            new_w    = int(IMG_WIDTH  * zoom)
-            new_h    = int(IMG_HEIGHT * zoom)
+        # Dark gradient at bottom for text readability
+        for i in range(400):
+            alpha = int(200 * (i / 400))
+            y_pos = IMG_HEIGHT - 400 + i
+            overlay = Image.new("RGBA", (IMG_WIDTH, 1), (0, 0, 0, alpha))
+            img.paste(Image.new("RGB", (IMG_WIDTH, 1), (0, 0, 0)),
+                     (0, y_pos),
+                     overlay)
 
-            # Resize with zoom
-            zoomed = np.array(
-                Image.fromarray(img_array).resize((new_w, new_h), Image.LANCZOS)
-            )
+        # Try to load a font, fallback to default
+        try:
+            font_large = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", FONT_SIZE)
+            font_small = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", 28)
+        except Exception:
+            font_large = ImageFont.load_default()
+            font_small = ImageFont.load_default()
 
-            # Crop center to original size
-            x = (new_w - IMG_WIDTH)  // 2
-            y = (new_h - IMG_HEIGHT) // 2
-            return zoomed[y:y+IMG_HEIGHT, x:x+IMG_WIDTH]
-
-        main_clip = ImageClip(img_array, duration=duration).fl(
-            lambda gf, t: make_frame(t)
-        ).set_fps(fps)
-
-        # --- Dark gradient overlay at bottom for text readability ---
-        gradient        = Image.new("RGBA", (IMG_WIDTH, 500), (0, 0, 0, 0))
-        draw            = ImageDraw.Draw(gradient)
-        for i in range(500):
-            alpha = int(180 * (i / 500))
-            draw.line([(0, 499-i), (IMG_WIDTH, 499-i)], fill=(0, 0, 0, alpha))
-        gradient_array  = np.array(gradient.convert("RGB"))
-        gradient_clip   = ImageClip(gradient_array, duration=duration)\
-                            .set_position(("center", IMG_HEIGHT - 500))\
-                            .set_opacity(0.7)
-
-        # --- Quote text overlay ---
-        # Wrap quote if too long
-        words       = quote.split()
+        # Draw quote text centered
+        words = quote.split()
         if len(words) > 4:
-            mid     = len(words) // 2
-            line1   = " ".join(words[:mid])
-            line2   = " ".join(words[mid:])
-            text    = f"{line1}\n{line2}"
+            mid   = len(words) // 2
+            text  = " ".join(words[:mid]) + "\n" + " ".join(words[mid:])
         else:
-            text    = quote
+            text  = quote
 
-        txt_clip = TextClip(
-            text,
-            fontsize   = FONT_SIZE,
-            color      = "white",
-            font       = "Arial-Bold",
-            align      = "center",
-            method     = "caption",
-            size       = (IMG_WIDTH - 100, None),
-            stroke_color = "black",
-            stroke_width = 2,
-        ).set_duration(duration)\
-         .set_position(("center", IMG_HEIGHT - 280))\
-         .crossfadein(1.0)
+        # Text shadow for readability
+        text_y = IMG_HEIGHT - 260
+        bbox   = draw.textbbox((0, 0), text, font=font_large)
+        text_w = bbox[2] - bbox[0]
+        text_x = (IMG_WIDTH - text_w) // 2
 
-        # --- Watermark / channel name ---
-        watermark = TextClip(
-            "@" + "LuxuryMindsetDaily",
-            fontsize     = 28,
-            color        = "white",
-            font         = "Arial",
-            stroke_color = "black",
-            stroke_width = 1,
-        ).set_duration(duration)\
-         .set_position((40, 60))\
-         .set_opacity(0.8)
+        # Shadow
+        draw.text((text_x + 2, text_y + 2), text, font=font_large, fill=(0, 0, 0, 200))
+        # Main text
+        draw.text((text_x, text_y), text, font=font_large, fill=(255, 255, 255, 255))
 
-        # --- Compose all layers ---
-        final = CompositeVideoClip([
-            main_clip,
-            gradient_clip,
-            txt_clip,
-            watermark,
-        ], size=(IMG_WIDTH, IMG_HEIGHT))
+        # Watermark
+        draw.text((40, 60), "@LuxuryMindsetDaily", font=font_small, fill=(255, 255, 255, 200))
 
-        # Apply fade in/out
-        final = final.fadein(0.5).fadeout(0.5)
+        # Save annotated image to temp file
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+            tmp_path = tmp.name
+            img.save(tmp_path, "JPEG", quality=95)
 
-        # --- Write video ---
-        log.info(f"Rendering video to {output_path}...")
-        final.write_videofile(
-            output_path,
-            fps            = fps,
-            codec          = "libx264",
-            audio          = False,
-            preset         = "ultrafast",
-            ffmpeg_params  = ["-crf", "23"],
-            logger         = None,
+        # Use ffmpeg to create video from image (Ken Burns zoom via zoompan filter)
+        ffmpeg_cmd = [
+            "ffmpeg", "-y",
+            "-loop", "1",
+            "-i", tmp_path,
+            "-vf", (
+                f"zoompan=z='min(zoom+0.0015,1.15)':d={VIDEO_DURATION * VIDEO_FPS}:"
+                f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+                f"s={IMG_WIDTH}x{IMG_HEIGHT},"
+                f"fps={VIDEO_FPS},"
+                f"fade=t=in:st=0:d=1,"
+                f"fade=t=out:st={VIDEO_DURATION - 1}:d=1"
+            ),
+            "-t", str(VIDEO_DURATION),
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-crf", "23",
+            "-pix_fmt", "yuv420p",
+            "-an",
+            output_path
+        ]
+
+        result = subprocess.run(
+            ffmpeg_cmd,
+            capture_output=True,
+            text=True,
+            timeout=120
         )
 
-        log.info(f"Video created: {output_path}")
-        return output_path
+        # Clean up temp file
+        os.unlink(tmp_path)
+
+        if result.returncode == 0:
+            log.info(f"Video created: {output_path}")
+            return output_path
+        else:
+            log.error(f"ffmpeg error: {result.stderr[-500:]}")
+            return create_simple_video(image_path, output_path)
 
     except Exception as e:
         log.error(f"Video creation failed: {e}")
-        log.info("Trying simple fallback video method...")
         return create_simple_video(image_path, output_path)
 
 
 def create_simple_video(image_path: str, output_path: str) -> str | None:
-    """Fallback: simple static image video without Ken Burns effect."""
+    """Fallback: simple static image video using ffmpeg directly."""
     try:
-        from moviepy.editor import ImageClip
+        import subprocess
 
-        clip = ImageClip(image_path, duration=VIDEO_DURATION)\
-                 .set_fps(VIDEO_FPS)
-        clip.write_videofile(
-            output_path,
-            codec   = "libx264",
-            audio   = False,
-            preset  = "ultrafast",
-            logger  = None,
-        )
-        log.info(f"Simple video created: {output_path}")
-        return output_path
+        log.info("Creating simple static video with ffmpeg...")
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-loop", "1",
+            "-i", image_path,
+            "-t", str(VIDEO_DURATION),
+            "-vf", f"scale={IMG_WIDTH}:{IMG_HEIGHT},fps={VIDEO_FPS}",
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-crf", "23",
+            "-pix_fmt", "yuv420p",
+            "-an",
+            output_path
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+
+        if result.returncode == 0:
+            log.info(f"Simple video created: {output_path}")
+            return output_path
+        else:
+            log.error(f"ffmpeg simple error: {result.stderr[-300:]}")
+            return None
 
     except Exception as e:
-        log.error(f"Simple video also failed: {e}")
+        log.error(f"Simple video failed: {e}")
         return None
 
 
