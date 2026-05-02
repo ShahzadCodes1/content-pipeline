@@ -573,25 +573,21 @@ def create_youtube_short(image_path: str, quote: str, output_path: str) -> str |
         music_path = tmp_files[0].replace("_scene0.jpg", "_music.mp3")
 
         # Pick a random music style each run
+        # Music styles — each uses simple sine wave combinations via ffmpeg lavfi
         music_styles = [
-            # (description, ffmpeg audio filter)
-            ("deep bass pulse",
-             f"sine=frequency=55:duration={VIDEO_DURATION},"
-             f"aeval=\'sin(2*PI*t*55)*0.4+sin(2*PI*t*110)*0.2+sin(2*PI*t*165)*0.1\':c=mono"),
-            ("cinematic strings",
-             f"sine=frequency=220:duration={VIDEO_DURATION},"
-             f"aeval=\'sin(2*PI*t*220)*0.3+sin(2*PI*t*330)*0.2+sin(2*PI*t*440)*0.15+sin(2*PI*t*165)*0.1\':c=mono"),
-            ("luxury ambient",
-             f"aeval=\'sin(2*PI*t*130)*0.3+sin(2*PI*t*195)*0.2+sin(2*PI*t*260)*0.15+sin(2*PI*t*97.5)*0.1\':c=mono:s=44100"),
-            ("motivational build",
-             f"aeval=\'sin(2*PI*t*174)*0.35+sin(2*PI*t*261)*0.25+sin(2*PI*t*349)*0.15\':c=mono:s=44100"),
-            ("epic low drone",
-             f"aeval=\'sin(2*PI*t*65)*0.4+sin(2*PI*t*97.5)*0.3+sin(2*PI*t*130)*0.2\':c=mono:s=44100"),
-            ("piano notes",
-             f"aeval=\'sin(2*PI*t*261.6)*0.3*exp(-t*0.5)+sin(2*PI*t*329.6)*0.2*exp(-t*0.4)+sin(2*PI*t*392)*0.15\':c=mono:s=44100"),
+            ("deep bass pulse",     "55",   "0.5"),
+            ("cinematic strings",   "220",  "0.4"),
+            ("luxury ambient",      "130",  "0.35"),
+            ("motivational build",  "174",  "0.45"),
+            ("epic low drone",      "65",   "0.5"),
+            ("bright piano",        "261",  "0.4"),
+            ("deep cello",          "98",   "0.45"),
+            ("ambient pad",         "146",  "0.35"),
         ]
 
-        style_name, audio_filter = random.choice(music_styles)
+        style_name, freq, vol = random.choice(music_styles)
+        freq2 = str(int(float(freq) * 1.5))
+        freq3 = str(int(float(freq) * 2.0))
         log.info(f"Generating music style: {style_name}")
 
         try:
@@ -599,24 +595,26 @@ def create_youtube_short(image_path: str, quote: str, output_path: str) -> str |
             music_cmd = [
                 "ffmpeg", "-y",
                 "-f", "lavfi",
-                "-i", f"{audio_filter}",
+                "-i", f"sine=frequency={freq}:duration={VIDEO_DURATION}",
+                "-f", "lavfi",
+                "-i", f"sine=frequency={freq2}:duration={VIDEO_DURATION}",
+                "-f", "lavfi",
+                "-i", f"sine=frequency={freq3}:duration={VIDEO_DURATION}",
+                "-filter_complex",
+                f"[0:a]volume=0.5[a0];[1:a]volume=0.3[a1];[2:a]volume=0.15[a2];"
+                f"[a0][a1][a2]amix=inputs=3:duration=longest,"
+                f"aecho=0.8:0.7:60:0.3,"
+                f"afade=t=in:st=0:d=3,"
+                f"afade=t=out:st={VIDEO_DURATION-4}:d=3,"
+                f"volume={vol}",
                 "-t", str(VIDEO_DURATION),
-                "-af", (
-                    # Add reverb-like effect + fade in/out + normalize
-                    f"aecho=0.8:0.88:60:0.4,"
-                    f"aecho=0.8:0.88:120:0.2,"
-                    f"afade=t=in:st=0:d=3,"
-                    f"afade=t=out:st={VIDEO_DURATION-4}:d=3,"
-                    f"volume=0.35,"
-                    f"dynaudnorm"
-                ),
                 "-c:a", "libmp3lame",
                 "-q:a", "4",
                 music_path
             ]
             result_music = sp.run(music_cmd, capture_output=True, text=True, timeout=60)
             if result_music.returncode != 0 or not os.path.exists(music_path):
-                log.warning(f"Music generation failed: {result_music.stderr[-200:]}")
+                log.warning(f"Music generation failed: {result_music.stderr[-300:]}")
                 music_path = None
             else:
                 log.info(f"Music generated: {style_name} ({os.path.getsize(music_path)//1024}KB)")
