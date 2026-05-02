@@ -268,41 +268,79 @@ def generate_text_content(trend_prompt: str):
     """
     t = trend_prompt.lower()
 
-    if any(w in t for w in ["music", "song", "video", "gaga", "rapper", "album", "official"]):
-        pool = [
-            ("Black grand piano in empty luxury penthouse, floor to ceiling windows, city skyline at dusk, cinematic 8K", "Create what they can only dream of."),
-            ("Penthouse rooftop at night, city lights below, champagne glass on glass railing, cinematic 8K luxury", "The sound of success is silence."),
-            ("Modern recording studio with city view at night, luxury interior, warm lighting, cinematic 8K", "Your art is your empire."),
-        ]
-    elif any(w in t for w in ["sport", "nba", "nfl", "celtics", "lakers", "game", "basketball", "football"]):
-        pool = [
-            ("Empty luxury sports car garage, row of Ferraris and Lamborghinis, dramatic spotlighting, cinematic 8K", "Champions are made before the game begins."),
-            ("Rooftop infinity pool overlooking city at night, luxury cabana, warm light, reflection, cinematic 8K", "Winners prepare while others sleep."),
-            ("Penthouse gym overlooking city skyline at sunrise, luxury equipment, dramatic light, cinematic 8K", "Discipline is the bridge to your dreams."),
-        ]
-    elif any(w in t for w in ["movie", "trailer", "film", "series", "season", "official teaser"]):
-        pool = [
-            ("Private jet interior at golden hour, cream leather seats, champagne, clouds below oval window, cinematic 8K", "Your story is worth living in full."),
-            ("Luxury home cinema room, velvet seats, city view through glass wall, cinematic lighting 8K", "Build the life worth watching."),
-            ("Yacht deck Mediterranean sea golden hour, champagne on table, luxury lifestyle, cinematic 8K", "Every scene of your life should be worth replaying."),
-        ]
-    elif any(w in t for w in ["news", "america", "world", "politics", "breaking"]):
-        pool = [
-            ("Matte black Lamborghini on rain-soaked empty highway at night, neon reflections, cinematic 8K", "While they talk you build."),
-            ("Empty modern boardroom top floor, panoramic city view at dawn, cinematic 8K luxury photography", "The news reports the world. You change it."),
-            ("Luxury penthouse study at night, city lights below, whiskey glass, leather chair, cinematic 8K", "Stay focused. The world is loud on purpose."),
-        ]
+    # Master pool — 40+ unique scenes across all categories
+    # Always picks randomly so every video is different
+    all_scenes = [
+        # Cars
+        ("Matte black Lamborghini Aventador on rain-soaked highway at night, neon city reflections, cinematic 8K", "Success is built in silence."),
+        ("Black Rolls Royce Phantom on foggy mountain road at sunrise, ultra-realistic cinematic 8K", "Discipline creates destiny."),
+        ("White McLaren 720S parked on empty desert highway at golden hour, dramatic sky, cinematic 8K", "Be rare. Be relentless."),
+        ("Ferrari SF90 in underground luxury garage, dramatic spotlighting, red paint gleaming, cinematic 8K", "Earn what others only dream of."),
+        ("Bentley Continental GT driving through rain at night, city lights blur, cinematic 8K", "Move in silence. Let success make the noise."),
+        ("Matte grey Porsche 911 on coastal cliff road at sunset, ocean below, cinematic 8K", "The view from the top is worth every climb."),
+        # Penthouses and mansions
+        ("Empty ultra-luxury penthouse living room at dawn, floor to ceiling windows, Dubai skyline, cinematic 8K", "Build the life they stare at."),
+        ("Modern mansion exterior at night, illuminated infinity pool, palm trees, city view, cinematic 8K", "Your dream home is a decision away."),
+        ("Luxury penthouse bedroom at golden hour, silk sheets, panoramic city view, cinematic 8K", "Wake up in the life you used to dream about."),
+        ("Minimalist white mansion interior, double height ceilings, art on walls, morning light, cinematic 8K", "Simple taste. Extraordinary life."),
+        ("Luxury penthouse study at night, leather chair, whiskey glass, city lights below, cinematic 8K", "Stay focused. The world is loud on purpose."),
+        ("Glass mansion on hillside at dusk, infinity pool merging with ocean horizon, cinematic 8K", "Elevate your standard. Elevate your life."),
+        # Jets and travel
+        ("Private jet interior at golden hour, cream leather seats, champagne glass, clouds below, cinematic 8K", "Freedom is earned not given."),
+        ("Private jet flying above clouds at sunset, golden light through windows, cinematic 8K", "Your altitude is determined by your attitude."),
+        ("Luxury first class suite on plane at night, champagne, starry sky outside window, cinematic 8K", "Travel is the only thing you buy that makes you richer."),
+        ("Empty private jet tarmac at dawn, aircraft door open, stairs down, ready to fly, cinematic 8K", "The world belongs to those who move."),
+        # Yachts and water
+        ("Luxury yacht deck at golden hour, Mediterranean sea, champagne on table, cinematic 8K", "The ocean belongs to those who dare."),
+        ("Superyacht sailing at sunset, golden wake behind it, empty horizon, cinematic 8K", "Chart your own course."),
+        ("Yacht interior, teak deck, infinity ocean view, white sails, Mediterranean blue, cinematic 8K", "Some people dream of success. Others sail toward it."),
+        # Hotels and rooftops
+        ("Rooftop penthouse terrace Dubai at dusk, outdoor luxury furniture, city glow below, cinematic 8K", "Elevation is a mindset first."),
+        ("Luxury hotel infinity pool overlooking city at night, champagne, warm amber light, cinematic 8K", "Winners prepare while others sleep."),
+        ("Five star hotel suite at golden hour, king bed, city view, luxury interior, cinematic 8K", "You deserve the best room in the house."),
+        ("Rooftop bar at night, city lights below, champagne glass catching light, cinematic 8K", "The higher you go the better the view."),
+        # Music and art
+        ("Black grand piano in empty luxury penthouse, floor to ceiling windows, city skyline at dusk, cinematic 8K", "Create what they can only dream of."),
+        ("Modern recording studio with city view at night, warm lighting, premium equipment, cinematic 8K", "Your art is your empire."),
+        ("Empty concert hall with golden lights, luxury interior, single spotlight, cinematic 8K", "Perform like the world is watching. It is."),
+        # Nature and adventure
+        ("Luxury overwater villa in Maldives at sunrise, crystal water, wooden deck, cinematic 8K", "Paradise is a decision."),
+        ("Snow-capped mountain peak at sunrise, golden light, dramatic clouds, cinematic 8K", "The summit is earned not given."),
+        ("Private beach at sunset, luxury chairs, champagne, nobody around, cinematic 8K", "When you win, the whole world is yours."),
+        ("Aerial view of tropical island from helicopter, turquoise water, luxury resort below, cinematic 8K", "Life is short. Make it spectacular."),
+        # Watches and fashion
+        ("Luxury watch on black velvet, dramatic studio lighting, close up, cinematic 8K", "Value your time like it costs a fortune. It does."),
+        ("Designer suit hanging by window, city skyline behind it, morning light, cinematic 8K", "Dress for the life you are building."),
+        # Boardrooms and offices
+        ("Empty modern boardroom, panoramic city view at dawn, long table, leather chairs, cinematic 8K", "The news reports the world. You change it."),
+        ("Corner office penthouse floor at night, city lights below, desk with single lamp, cinematic 8K", "While they sleep you plan. While they plan you execute."),
+        # Food and dining
+        ("Private rooftop dining table set for two, city panorama, candles, luxury tableware, cinematic 8K", "The good life is built one decision at a time."),
+        ("Michelin star restaurant table at night, champagne poured, city view through glass, cinematic 8K", "Taste what discipline tastes like."),
+        # Miscellaneous luxury
+        ("Luxury garage with Bugatti Chiron, Lamborghini, Ferrari, dramatic lighting, cinematic 8K", "Your garage should tell your story."),
+        ("Penthouse gym overlooking city at sunrise, premium equipment, golden light, cinematic 8K", "The body you want is built in the hours they waste."),
+        ("Empty luxury shopping mall after hours, designer stores, marble floors, cinematic 8K", "When you build enough, the world opens up."),
+        ("Helicopter interior flying over Manhattan at night, city grid below, champagne, cinematic 8K", "Get high enough and perspective changes everything."),
+    ]
+
+    # Pick based on trending keywords but always randomize within category
+    if any(w in t for w in ["music", "song", "gaga", "rapper", "album"]):
+        category = [s for s in all_scenes if any(k in s[0].lower() for k in ["piano", "studio", "concert", "art"])]
+    elif any(w in t for w in ["sport", "nba", "nfl", "celtics", "basketball", "football", "nuggets", "bruins"]):
+        category = [s for s in all_scenes if any(k in s[0].lower() for k in ["gym", "garage", "mountain", "summit"])]
+    elif any(w in t for w in ["movie", "trailer", "film", "series", "resident", "teaser"]):
+        category = [s for s in all_scenes if any(k in s[0].lower() for k in ["jet", "yacht", "hotel", "cinema", "helicopter"])]
+    elif any(w in t for w in ["news", "america", "politics", "breaking"]):
+        category = [s for s in all_scenes if any(k in s[0].lower() for k in ["boardroom", "office", "penthouse study", "corner"])]
     else:
-        pool = [
-            ("Matte black Lamborghini on rain-soaked highway at night, neon city reflections, cinematic 8K ultra-realistic", "Success is built in silence."),
-            ("Luxury penthouse infinity pool Dubai golden hour, glass skyscrapers, warm amber light, cinematic 8K", "Your vision becomes your reality."),
-            ("Private jet interior sunset, cream leather seats, champagne glass, clouds below, cinematic 8K", "Freedom is earned not given."),
-            ("Empty mansion living room dawn, floor to ceiling windows, city skyline, cinematic 8K", "Build the life they stare at."),
-            ("Black Rolls Royce foggy mountain road sunrise, ultra-realistic cinematic photography 8K", "Discipline creates destiny."),
-            ("Yacht deck at golden hour, Mediterranean sea, champagne on table, luxury lifestyle, cinematic 8K", "The ocean belongs to those who dare."),
-            ("Modern mansion exterior at night, illuminated pool, palm trees, luxury real estate, cinematic 8K", "Your dream home is a decision away."),
-            ("Rooftop penthouse terrace Dubai skyline at dusk, outdoor luxury furniture, city glow, cinematic 8K", "Elevation is a mindset first."),
-        ]
+        category = all_scenes
+
+    if not category:
+        category = all_scenes
+
+    # Always pick randomly from category so no two videos are the same
+    pool = random.sample(category, min(5, len(category)))
 
     image_prompt, quote = random.choice(pool)
     log.info("Content selected via keyword matching")
