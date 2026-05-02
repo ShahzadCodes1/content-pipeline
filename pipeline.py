@@ -466,37 +466,66 @@ def create_youtube_short(image_path: str, quote: str, output_path: str) -> str |
             tmp_path = tmp.name
             img.save(tmp_path, "JPEG", quality=95)
 
-        # Use ffmpeg to create video from image (Ken Burns zoom via zoompan filter)
-        ffmpeg_cmd = [
-            "ffmpeg", "-y",
-            "-loop", "1",
-            "-i", tmp_path,
-            "-vf", (
-                f"zoompan=z='min(zoom+0.0015,1.15)':d={VIDEO_DURATION * VIDEO_FPS}:"
-                f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-                f"s={IMG_WIDTH}x{IMG_HEIGHT},"
-                f"fps={VIDEO_FPS},"
-                f"fade=t=in:st=0:d=1,"
-                f"fade=t=out:st={VIDEO_DURATION - 1}:d=1"
-            ),
-            "-t", str(VIDEO_DURATION),
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-crf", "23",
-            "-pix_fmt", "yuv420p",
-            "-an",
-            output_path
-        ]
+        # Fix: zoompan needs exact frame count for correct duration
+        total_frames = VIDEO_DURATION * VIDEO_FPS
 
-        result = subprocess.run(
-            ffmpeg_cmd,
-            capture_output=True,
-            text=True,
-            timeout=120
-        )
+        # Download free background music from pixabay
+        music_path = None
+        try:
+            music_urls = [
+                "https://cdn.pixabay.com/audio/2024/03/11/audio_2612a6b5c7.mp3",
+                "https://cdn.pixabay.com/audio/2023/06/08/audio_b95b9e5a6f.mp3",
+                "https://cdn.pixabay.com/audio/2022/08/04/audio_2dde668d05.mp3",
+            ]
+            r = requests.get(random.choice(music_urls), timeout=15)
+            if r.status_code == 200 and len(r.content) > 1000:
+                music_path = tmp_path.replace(".jpg", ".mp3")
+                open(music_path, "wb").write(r.content)
+                log.info("Background music downloaded")
+        except Exception as me:
+            log.warning(f"Music download skipped: {me}")
 
-        # Clean up temp file
+        if music_path and os.path.exists(music_path):
+            ffmpeg_cmd = [
+                "ffmpeg", "-y",
+                "-loop", "1", "-i", tmp_path,
+                "-i", music_path,
+                "-vf", (
+                    f"zoompan=z='min(zoom+0.0010,1.12)':d={total_frames}:"
+                    f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+                    f"s={IMG_WIDTH}x{IMG_HEIGHT}:fps={VIDEO_FPS},"
+                    f"fade=t=in:st=0:d=1:color=black,"
+                    f"fade=t=out:st={VIDEO_DURATION-2}:d=1:color=black"
+                ),
+                "-af", f"afade=t=in:st=0:d=2,afade=t=out:st={VIDEO_DURATION-3}:d=2,volume=0.4",
+                "-t", str(VIDEO_DURATION),
+                "-c:v", "libx264", "-c:a", "aac", "-b:a", "128k",
+                "-preset", "ultrafast", "-crf", "23", "-pix_fmt", "yuv420p",
+                "-shortest", output_path
+            ]
+        else:
+            ffmpeg_cmd = [
+                "ffmpeg", "-y",
+                "-loop", "1", "-i", tmp_path,
+                "-vf", (
+                    f"zoompan=z='min(zoom+0.0010,1.12)':d={total_frames}:"
+                    f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+                    f"s={IMG_WIDTH}x{IMG_HEIGHT}:fps={VIDEO_FPS},"
+                    f"fade=t=in:st=0:d=1:color=black,"
+                    f"fade=t=out:st={VIDEO_DURATION-2}:d=1:color=black"
+                ),
+                "-t", str(VIDEO_DURATION),
+                "-c:v", "libx264", "-preset", "ultrafast",
+                "-crf", "23", "-pix_fmt", "yuv420p", "-an",
+                output_path
+            ]
+
+        result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=180)
+
+        # Clean up temp files
         os.unlink(tmp_path)
+        if music_path and os.path.exists(music_path):
+            os.unlink(music_path)
 
         if result.returncode == 0:
             log.info(f"Video created: {output_path}")
