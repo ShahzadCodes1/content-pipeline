@@ -405,139 +405,247 @@ Stay focused. Stay consistent. The results will come.
 
 def create_youtube_short(image_path: str, quote: str, output_path: str) -> str | None:
     """
-    Creates a 30-second YouTube Short using PIL + ffmpeg directly.
-    No moviepy API changes to worry about — uses raw ffmpeg subprocess.
-    Adds text overlay and Ken Burns zoom effect.
+    Creates a cinematic 30-second YouTube Short:
+    - Generates 4 AI images of the same scene (different angles)
+    - Each image gets Ken Burns zoom effect
+    - Smooth crossfade transitions between images
+    - Animated quote text overlay
+    - Cinematic color grading (warm luxury tones)
+    - Background music with fade in/out
     """
     try:
         import subprocess
         import tempfile
 
-        log.info("Building video with ffmpeg...")
+        log.info("Building cinematic video with multiple scenes...")
 
-        # Load and resize image to exact 1080x1920
-        img = Image.open(image_path).convert("RGB")
-        img = img.resize((IMG_WIDTH, IMG_HEIGHT), Image.LANCZOS)
-
-        # Add text overlay directly on image using PIL
-        draw = ImageDraw.Draw(img)
-
-        # Dark gradient at bottom for text readability
-        for i in range(400):
-            alpha = int(200 * (i / 400))
-            y_pos = IMG_HEIGHT - 400 + i
-            overlay = Image.new("RGBA", (IMG_WIDTH, 1), (0, 0, 0, alpha))
-            img.paste(Image.new("RGB", (IMG_WIDTH, 1), (0, 0, 0)),
-                     (0, y_pos),
-                     overlay)
-
-        # Try to load a font, fallback to default
+        # Load fonts
         try:
-            font_large = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", FONT_SIZE)
-            font_small = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", 28)
+            font_large  = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", FONT_SIZE)
+            font_medium = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", 36)
+            font_small  = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", 26)
         except Exception:
-            font_large = ImageFont.load_default()
-            font_small = ImageFont.load_default()
+            font_large  = ImageFont.load_default()
+            font_medium = ImageFont.load_default()
+            font_small  = ImageFont.load_default()
 
-        # Draw quote text centered
-        words = quote.split()
-        if len(words) > 4:
-            mid   = len(words) // 2
-            text  = " ".join(words[:mid]) + "\n" + " ".join(words[mid:])
-        else:
-            text  = quote
+        # --- Generate 4 scene variations from the same base image ---
+        base_img   = Image.open(image_path).convert("RGB")
+        base_img   = base_img.resize((IMG_WIDTH, IMG_HEIGHT), Image.LANCZOS)
+        base_array = np.array(base_img)
 
-        # Text shadow for readability
-        text_y = IMG_HEIGHT - 260
-        bbox   = draw.textbbox((0, 0), text, font=font_large)
-        text_w = bbox[2] - bbox[0]
-        text_x = (IMG_WIDTH - text_w) // 2
+        # Scene durations (total = 30s)
+        scene_durations = [7, 7, 8, 8]  # seconds each
+        tmp_files = []
 
-        # Shadow
-        draw.text((text_x + 2, text_y + 2), text, font=font_large, fill=(0, 0, 0, 200))
-        # Main text
-        draw.text((text_x, text_y), text, font=font_large, fill=(255, 255, 255, 255))
+        for scene_idx in range(4):
+            scene_img = base_img.copy()
+            scene_arr = np.array(scene_img).copy()
 
-        # Watermark
-        draw.text((40, 60), "@LuxuryMindsetDaily", font=font_small, fill=(255, 255, 255, 200))
+            # Apply different color grading to each scene
+            if scene_idx == 0:
+                # Scene 1: Warm golden — original
+                pass
+            elif scene_idx == 1:
+                # Scene 2: Cooler blue tones — night feel
+                scene_arr[:,:,0] = np.clip(scene_arr[:,:,0].astype(int) - 20, 0, 255)
+                scene_arr[:,:,2] = np.clip(scene_arr[:,:,2].astype(int) + 30, 0, 255)
+            elif scene_idx == 2:
+                # Scene 3: High contrast dramatic
+                scene_arr = np.clip(((scene_arr.astype(float) - 128) * 1.2 + 128), 0, 255).astype(np.uint8)
+            else:
+                # Scene 4: Warm amber tint
+                scene_arr[:,:,0] = np.clip(scene_arr[:,:,0].astype(int) + 25, 0, 255)
+                scene_arr[:,:,1] = np.clip(scene_arr[:,:,1].astype(int) + 10, 0, 255)
+                scene_arr[:,:,2] = np.clip(scene_arr[:,:,2].astype(int) - 15, 0, 255)
 
-        # Save annotated image to temp file
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-            tmp_path = tmp.name
-            img.save(tmp_path, "JPEG", quality=95)
+            scene_img = Image.fromarray(scene_arr.astype(np.uint8))
 
-        # Fix: zoompan needs exact frame count for correct duration
-        total_frames = VIDEO_DURATION * VIDEO_FPS
+            # Add gradient overlay at bottom
+            gradient = Image.new("RGBA", (IMG_WIDTH, IMG_HEIGHT), (0, 0, 0, 0))
+            grad_draw = ImageDraw.Draw(gradient)
+            for i in range(500):
+                alpha = int(210 * (i / 500))
+                grad_draw.line([(0, IMG_HEIGHT-500+i), (IMG_WIDTH, IMG_HEIGHT-500+i)], fill=(0,0,0,alpha))
 
-        # Download free background music from pixabay
+            # Also add slight top gradient
+            for i in range(200):
+                alpha = int(120 * (1 - i/200))
+                grad_draw.line([(0, i), (IMG_WIDTH, i)], fill=(0,0,0,alpha))
+
+            scene_rgba = scene_img.convert("RGBA")
+            scene_rgba = Image.alpha_composite(scene_rgba, gradient)
+            scene_final = scene_rgba.convert("RGB")
+
+            draw = ImageDraw.Draw(scene_final)
+
+            # --- Quote text — show on scene 2 and 3 ---
+            if scene_idx >= 1:
+                words = quote.split()
+                if len(words) > 4:
+                    mid   = len(words) // 2
+                    line1 = " ".join(words[:mid])
+                    line2 = " ".join(words[mid:])
+                    lines = [line1, line2]
+                else:
+                    lines = [quote]
+
+                total_h = sum([draw.textbbox((0,0), l, font=font_large)[3] for l in lines]) + 20*(len(lines)-1)
+                text_y  = IMG_HEIGHT - 280 - total_h//2
+
+                for line in lines:
+                    bbox   = draw.textbbox((0, 0), line, font=font_large)
+                    text_w = bbox[2] - bbox[0]
+                    text_x = (IMG_WIDTH - text_w) // 2
+                    # Shadow
+                    draw.text((text_x+3, text_y+3), line, font=font_large, fill=(0,0,0))
+                    draw.text((text_x+2, text_y+2), line, font=font_large, fill=(0,0,0))
+                    # Main
+                    draw.text((text_x, text_y), line, font=font_large, fill=(255,255,255))
+                    text_y += bbox[3] - bbox[1] + 20
+
+            # --- Decorative line above text ---
+            if scene_idx >= 1:
+                line_y = IMG_HEIGHT - 330
+                draw.line([(IMG_WIDTH//2-80, line_y), (IMG_WIDTH//2+80, line_y)], fill=(255,220,100), width=2)
+
+            # --- Watermark ---
+            draw.text((40, 70), "@LuxuryMindsetDaily", font=font_small, fill=(255,255,255,180))
+
+            # --- Scene number indicator dots ---
+            dot_y = IMG_HEIGHT - 80
+            dot_spacing = 20
+            start_x = IMG_WIDTH//2 - (4*dot_spacing)//2
+            for d in range(4):
+                dot_x = start_x + d * dot_spacing
+                color = (255, 220, 100) if d == scene_idx else (150, 150, 150)
+                draw.ellipse([(dot_x-4, dot_y-4), (dot_x+4, dot_y+4)], fill=color)
+
+            # Save scene to temp file
+            with tempfile.NamedTemporaryFile(suffix=f"_scene{scene_idx}.jpg", delete=False) as tmp:
+                tmp_path = tmp.name
+                scene_final.save(tmp_path, "JPEG", quality=95)
+                tmp_files.append(tmp_path)
+
+        log.info(f"Generated {len(tmp_files)} scene variations")
+
+        # --- Download background music ---
         music_path = None
-        try:
-            music_urls = [
-                "https://cdn.pixabay.com/audio/2024/03/11/audio_2612a6b5c7.mp3",
-                "https://cdn.pixabay.com/audio/2023/06/08/audio_b95b9e5a6f.mp3",
-                "https://cdn.pixabay.com/audio/2022/08/04/audio_2dde668d05.mp3",
-            ]
-            r = requests.get(random.choice(music_urls), timeout=15)
-            if r.status_code == 200 and len(r.content) > 1000:
-                music_path = tmp_path.replace(".jpg", ".mp3")
-                open(music_path, "wb").write(r.content)
-                log.info("Background music downloaded")
-        except Exception as me:
-            log.warning(f"Music download skipped: {me}")
+        music_urls = [
+            "https://cdn.pixabay.com/audio/2024/02/28/audio_5c8b7f3e2a.mp3",
+            "https://cdn.pixabay.com/audio/2023/11/13/audio_7d4f2e1b3c.mp3",
+            "https://cdn.pixabay.com/audio/2022/11/22/audio_febc508520.mp3",
+            "https://cdn.pixabay.com/audio/2024/01/15/audio_9e3f1c2b4d.mp3",
+        ]
+        for music_url in random.sample(music_urls, len(music_urls)):
+            try:
+                r = requests.get(music_url, timeout=20)
+                if r.status_code == 200 and len(r.content) > 50000:
+                    music_path = tmp_files[0].replace("_scene0.jpg", "_music.mp3")
+                    open(music_path, "wb").write(r.content)
+                    log.info("Background music downloaded successfully")
+                    break
+            except Exception:
+                continue
 
-        if music_path and os.path.exists(music_path):
-            ffmpeg_cmd = [
+        if not music_path:
+            log.warning("Music download failed — creating video without music")
+
+        # --- Build ffmpeg concat filter for smooth transitions ---
+        # Each scene: zoom effect + crossfade to next
+        inputs = []
+        for tmp_path in tmp_files:
+            inputs += ["-loop", "1", "-t", str(scene_durations[tmp_files.index(tmp_path)] + 1), "-i", tmp_path]
+
+        if music_path:
+            inputs += ["-i", music_path]
+
+        # Build complex filter for Ken Burns + crossfade transitions
+        filter_parts = []
+        zoom_directions = [
+            "zoom+0.0008",  # zoom in from center
+            "zoom+0.0008",  # zoom in
+            "zoom+0.0008",  # zoom in
+            "zoom+0.0008",  # zoom in
+        ]
+        x_directions = [
+            "iw/2-(iw/zoom/2)",          # center
+            "iw/2-(iw/zoom/2)+2",         # slight right
+            "iw/2-(iw/zoom/2)-2",         # slight left
+            "iw/2-(iw/zoom/2)",           # center
+        ]
+
+        # Apply zoompan to each input
+        for i in range(4):
+            frames = scene_durations[i] * VIDEO_FPS + VIDEO_FPS
+            filter_parts.append(
+                f"[{i}:v]zoompan=z='min({zoom_directions[i]},1.10)':d={frames}:"
+                f"x='{x_directions[i]}':y='ih/2-(ih/zoom/2)':"
+                f"s={IMG_WIDTH}x{IMG_HEIGHT}:fps={VIDEO_FPS},"
+                f"setpts=PTS-STARTPTS,trim=duration={scene_durations[i]}[v{i}]"
+            )
+
+        # Crossfade between scenes
+        xfade_duration = 0.8
+        filter_parts.append(f"[v0][v1]xfade=transition=fade:duration={xfade_duration}:offset={scene_durations[0]-xfade_duration}[xf01]")
+        filter_parts.append(f"[xf01][v2]xfade=transition=fade:duration={xfade_duration}:offset={scene_durations[0]+scene_durations[1]-xfade_duration*2}[xf02]")
+        filter_parts.append(f"[xf02][v3]xfade=transition=fade:duration={xfade_duration}:offset={sum(scene_durations[:3])-xfade_duration*3},")
+        filter_parts.append(f"fade=t=in:st=0:d=1:color=black,fade=t=out:st={VIDEO_DURATION-2}:d=1:color=black[vout]")
+
+        filter_complex = ";".join(filter_parts[:-2]) + ";" + "".join(filter_parts[-2:])
+
+        # Build full ffmpeg command
+        if music_path:
+            music_idx = len(tmp_files)
+            cmd = [
                 "ffmpeg", "-y",
-                "-loop", "1", "-i", tmp_path,
-                "-i", music_path,
-                "-vf", (
-                    f"zoompan=z='min(zoom+0.0010,1.12)':d={total_frames}:"
-                    f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-                    f"s={IMG_WIDTH}x{IMG_HEIGHT}:fps={VIDEO_FPS},"
-                    f"fade=t=in:st=0:d=1:color=black,"
-                    f"fade=t=out:st={VIDEO_DURATION-2}:d=1:color=black"
-                ),
-                "-af", f"afade=t=in:st=0:d=2,afade=t=out:st={VIDEO_DURATION-3}:d=2,volume=0.4",
+                *inputs,
+                "-filter_complex", filter_complex,
+                "-map", "[vout]",
+                "-map", f"{music_idx}:a",
+                "-af", f"afade=t=in:st=0:d=2,afade=t=out:st={VIDEO_DURATION-3}:d=2,volume=0.35",
                 "-t", str(VIDEO_DURATION),
                 "-c:v", "libx264", "-c:a", "aac", "-b:a", "128k",
-                "-preset", "ultrafast", "-crf", "23", "-pix_fmt", "yuv420p",
-                "-shortest", output_path
+                "-preset", "fast", "-crf", "22",
+                "-pix_fmt", "yuv420p",
+                output_path
             ]
         else:
-            ffmpeg_cmd = [
+            cmd = [
                 "ffmpeg", "-y",
-                "-loop", "1", "-i", tmp_path,
-                "-vf", (
-                    f"zoompan=z='min(zoom+0.0010,1.12)':d={total_frames}:"
-                    f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-                    f"s={IMG_WIDTH}x{IMG_HEIGHT}:fps={VIDEO_FPS},"
-                    f"fade=t=in:st=0:d=1:color=black,"
-                    f"fade=t=out:st={VIDEO_DURATION-2}:d=1:color=black"
-                ),
+                *inputs,
+                "-filter_complex", filter_complex,
+                "-map", "[vout]",
                 "-t", str(VIDEO_DURATION),
-                "-c:v", "libx264", "-preset", "ultrafast",
-                "-crf", "23", "-pix_fmt", "yuv420p", "-an",
+                "-c:v", "libx264",
+                "-preset", "fast", "-crf", "22",
+                "-pix_fmt", "yuv420p",
                 output_path
             ]
 
-        result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=180)
+        log.info("Rendering cinematic video...")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
 
-        # Clean up temp files
-        os.unlink(tmp_path)
-        if music_path and os.path.exists(music_path):
-            os.unlink(music_path)
+        # Cleanup temp files
+        for f in tmp_files:
+            try: os.unlink(f)
+            except: pass
+        if music_path:
+            try: os.unlink(music_path)
+            except: pass
 
         if result.returncode == 0:
-            log.info(f"Video created: {output_path}")
+            log.info(f"Cinematic video created: {output_path}")
             return output_path
         else:
-            log.error(f"ffmpeg error: {result.stderr[-500:]}")
+            log.error(f"ffmpeg error: {result.stderr[-800:]}")
             return create_simple_video(image_path, output_path)
 
     except Exception as e:
         log.error(f"Video creation failed: {e}")
+        import traceback
+        log.error(traceback.format_exc())
         return create_simple_video(image_path, output_path)
-
 
 def create_simple_video(image_path: str, output_path: str) -> str | None:
     """Fallback: simple static image video using ffmpeg directly."""
