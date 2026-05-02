@@ -567,27 +567,62 @@ def create_youtube_short(image_path: str, quote: str, output_path: str) -> str |
 
         log.info(f"Generated {len(tmp_files)} scene variations")
 
-        # --- Download background music ---
-        music_path = None
-        music_urls = [
-            "https://cdn.pixabay.com/audio/2024/02/28/audio_5c8b7f3e2a.mp3",
-            "https://cdn.pixabay.com/audio/2023/11/13/audio_7d4f2e1b3c.mp3",
-            "https://cdn.pixabay.com/audio/2022/11/22/audio_febc508520.mp3",
-            "https://cdn.pixabay.com/audio/2024/01/15/audio_9e3f1c2b4d.mp3",
-        ]
-        for music_url in random.sample(music_urls, len(music_urls)):
-            try:
-                r = requests.get(music_url, timeout=20)
-                if r.status_code == 200 and len(r.content) > 50000:
-                    music_path = tmp_files[0].replace("_scene0.jpg", "_music.mp3")
-                    open(music_path, "wb").write(r.content)
-                    log.info("Background music downloaded successfully")
-                    break
-            except Exception:
-                continue
+        # --- Generate cinematic background music using ffmpeg ---
+        # No downloading needed — generates unique music every run
+        # Each style sounds completely different
+        music_path = tmp_files[0].replace("_scene0.jpg", "_music.mp3")
 
-        if not music_path:
-            log.warning("Music download failed — creating video without music")
+        # Pick a random music style each run
+        music_styles = [
+            # (description, ffmpeg audio filter)
+            ("deep bass pulse",
+             f"sine=frequency=55:duration={VIDEO_DURATION},"
+             f"aeval=\'sin(2*PI*t*55)*0.4+sin(2*PI*t*110)*0.2+sin(2*PI*t*165)*0.1\':c=mono"),
+            ("cinematic strings",
+             f"sine=frequency=220:duration={VIDEO_DURATION},"
+             f"aeval=\'sin(2*PI*t*220)*0.3+sin(2*PI*t*330)*0.2+sin(2*PI*t*440)*0.15+sin(2*PI*t*165)*0.1\':c=mono"),
+            ("luxury ambient",
+             f"aeval=\'sin(2*PI*t*130)*0.3+sin(2*PI*t*195)*0.2+sin(2*PI*t*260)*0.15+sin(2*PI*t*97.5)*0.1\':c=mono:s=44100"),
+            ("motivational build",
+             f"aeval=\'sin(2*PI*t*174)*0.35+sin(2*PI*t*261)*0.25+sin(2*PI*t*349)*0.15\':c=mono:s=44100"),
+            ("epic low drone",
+             f"aeval=\'sin(2*PI*t*65)*0.4+sin(2*PI*t*97.5)*0.3+sin(2*PI*t*130)*0.2\':c=mono:s=44100"),
+            ("piano notes",
+             f"aeval=\'sin(2*PI*t*261.6)*0.3*exp(-t*0.5)+sin(2*PI*t*329.6)*0.2*exp(-t*0.4)+sin(2*PI*t*392)*0.15\':c=mono:s=44100"),
+        ]
+
+        style_name, audio_filter = random.choice(music_styles)
+        log.info(f"Generating music style: {style_name}")
+
+        try:
+            import subprocess as sp
+            music_cmd = [
+                "ffmpeg", "-y",
+                "-f", "lavfi",
+                "-i", f"{audio_filter}",
+                "-t", str(VIDEO_DURATION),
+                "-af", (
+                    # Add reverb-like effect + fade in/out + normalize
+                    f"aecho=0.8:0.88:60:0.4,"
+                    f"aecho=0.8:0.88:120:0.2,"
+                    f"afade=t=in:st=0:d=3,"
+                    f"afade=t=out:st={VIDEO_DURATION-4}:d=3,"
+                    f"volume=0.35,"
+                    f"dynaudnorm"
+                ),
+                "-c:a", "libmp3lame",
+                "-q:a", "4",
+                music_path
+            ]
+            result_music = sp.run(music_cmd, capture_output=True, text=True, timeout=60)
+            if result_music.returncode != 0 or not os.path.exists(music_path):
+                log.warning(f"Music generation failed: {result_music.stderr[-200:]}")
+                music_path = None
+            else:
+                log.info(f"Music generated: {style_name} ({os.path.getsize(music_path)//1024}KB)")
+        except Exception as me:
+            log.warning(f"Music generation error: {me}")
+            music_path = None
 
         # --- Build ffmpeg concat filter for smooth transitions ---
         # Each scene: zoom effect + crossfade to next
