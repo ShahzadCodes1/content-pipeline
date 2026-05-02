@@ -2,11 +2,11 @@ name: Content Pipeline
 
 on:
   schedule:
-    - cron: '0 6 * * *'    # 9:00 AM Bahrain (UTC+3)
-    - cron: '0 9 * * *'    # 12:00 PM Bahrain
-    - cron: '0 12 * * *'   # 3:00 PM Bahrain
-    - cron: '0 15 * * *'   # 6:00 PM Bahrain
-    - cron: '0 18 * * *'   # 9:00 PM Bahrain
+    - cron: '15 4 * * *'   # 7:15 AM Bahrain (UTC+3)
+    - cron: '30 9 * * *'   # 12:30 PM Bahrain
+    - cron: '30 13 * * *'  # 4:30 PM Bahrain
+    - cron: '30 17 * * *'  # 8:30 PM Bahrain
+    - cron: '0 22 * * *'   # 1:00 AM Bahrain
   workflow_dispatch:        # run manually anytime from Actions tab
 
 jobs:
@@ -15,14 +15,14 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install system dependencies (for moviepy + video)
+      - name: Install system dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y ffmpeg fonts-liberation
