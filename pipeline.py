@@ -438,6 +438,58 @@ Stay focused. Stay consistent. The results will come.
 # Ken Burns zoom effect + text overlay + title card
 # =============================================================
 
+def generate_google_tts(text: str, output_path: str) -> str | None:
+    """
+    Generate voiceover using Google Translate TTS (free, no API key needed).
+    Works reliably on GitHub Actions servers.
+    """
+    try:
+        import urllib.parse
+        import subprocess as sp
+
+        # Google Translate TTS — free, no key needed
+        clean_text = text.replace(",", " ").replace(".", " ").strip()
+        encoded    = urllib.parse.quote(clean_text)
+        url        = f"https://translate.google.com/translate_tts?ie=UTF-8&q={encoded}&tl=en&client=tw-ob"
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+
+        r = requests.get(url, headers=headers, timeout=15)
+
+        if r.status_code == 200 and len(r.content) > 1000:
+            # Save raw audio
+            raw_path = output_path.replace(".mp3", "_raw.mp3")
+            open(raw_path, "wb").write(r.content)
+
+            # Process with ffmpeg — slow down slightly, add reverb for cinematic feel
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", raw_path,
+                "-af", "atempo=0.9,aecho=0.8:0.7:40:0.3,volume=2.5",
+                "-ar", "44100",
+                "-c:a", "libmp3lame",
+                "-q:a", "3",
+                output_path
+            ]
+            result = sp.run(cmd, capture_output=True, text=True, timeout=30)
+
+            try: os.unlink(raw_path)
+            except: pass
+
+            if result.returncode == 0 and os.path.exists(output_path):
+                log.info(f"Google TTS voiceover generated ({os.path.getsize(output_path)//1024}KB)")
+                return output_path
+
+        log.warning(f"Google TTS failed: {r.status_code}")
+        return None
+
+    except Exception as e:
+        log.warning(f"Google TTS error: {e}")
+        return None
+
+
 def create_youtube_short(image_path: str, quote: str, output_path: str) -> str | None:
     """
     Creates a cinematic 30-second YouTube Short:
@@ -572,43 +624,38 @@ def create_youtube_short(image_path: str, quote: str, output_path: str) -> str |
         # Pick a random music style each run
         # Generate cinematic ambient music using ffmpeg anoisesrc
         # anoisesrc = built-in ffmpeg noise generator, always works
-        music_styles = [
-            ("deep cinematic",   "brown", "150", "2.5"),
-            ("luxury ambient",   "pink",  "200", "2.0"),
-            ("epic drone",       "brown", "100", "3.0"),
-            ("motivational",     "pink",  "300", "2.5"),
-            ("dark thriller",    "brown", "80",  "3.0"),
-            ("soft inspiration", "pink",  "400", "2.0"),
-            ("cosmic ambient",   "brown", "120", "2.5"),
-            ("power build",      "pink",  "250", "3.0"),
-        ]
-
-        style_name, noise_color, bandpass_freq, vol = random.choice(music_styles)
-        log.info(f"Generating music style: {style_name}")
-
+        # Pick a random real MP3 from the music/ folder in the repo
         try:
-            import subprocess as sp
-            music_cmd = [
-                "ffmpeg", "-y",
-                "-f", "lavfi",
-                "-i", f"anoisesrc=color={noise_color}:duration={VIDEO_DURATION}",
-                "-af", (
-                    f"bandpass=f={bandpass_freq}:width_type=o:w=2,"
-                    f"afade=t=in:st=0:d=4,"
-                    f"afade=t=out:st={VIDEO_DURATION-5}:d=4,"
-                    f"volume={vol}"
-                ),
-                "-t", str(VIDEO_DURATION),
-                "-ar", "44100",
-                "-c:a", "libmp3lame",
-                "-q:a", "3",
-                music_path
-            ]
-            result_music = sp.run(music_cmd, capture_output=True, text=True, timeout=60)
-            if result_music.returncode == 0 and os.path.exists(music_path) and os.path.getsize(music_path) > 1000:
-                log.info(f"Music generated: {style_name} ({os.path.getsize(music_path)//1024}KB)")
+            import glob
+            music_files = glob.glob("music/*.mp3")
+            if music_files:
+                chosen = random.choice(music_files)
+                log.info(f"Using music track: {chosen}")
+
+                # Trim to video duration and add fade in/out
+                import subprocess as sp
+                music_cmd = [
+                    "ffmpeg", "-y",
+                    "-i", chosen,
+                    "-af", (
+                        f"afade=t=in:st=0:d=3,"
+                        f"afade=t=out:st={VIDEO_DURATION-4}:d=3,"
+                        f"volume=0.4"
+                    ),
+                    "-t", str(VIDEO_DURATION),
+                    "-ar", "44100",
+                    "-c:a", "libmp3lame",
+                    "-q:a", "3",
+                    music_path
+                ]
+                result_music = sp.run(music_cmd, capture_output=True, text=True, timeout=60)
+                if result_music.returncode == 0 and os.path.exists(music_path) and os.path.getsize(music_path) > 1000:
+                    log.info(f"Music ready: {chosen} ({os.path.getsize(music_path)//1024}KB)")
+                else:
+                    log.warning(f"Music processing failed: {result_music.stderr[-200:]}")
+                    music_path = None
             else:
-                log.warning(f"Music failed: {result_music.stderr[-200:]}")
+                log.warning("No music files found in music/ folder")
                 music_path = None
         except Exception as me:
             log.warning(f"Music error: {me}")
@@ -657,14 +704,17 @@ def create_youtube_short(image_path: str, quote: str, output_path: str) -> str |
                 if tts_response.status_code == 200:
                     voice_path = tmp_files[0].replace("_scene0.jpg", "_voice.mp3")
                     open(voice_path, "wb").write(tts_response.content)
-                    log.info(f"Voiceover generated ({len(tts_response.content)//1024}KB)")
+                    log.info(f"ElevenLabs voiceover generated ({len(tts_response.content)//1024}KB)")
                 else:
-                    log.warning(f"ElevenLabs error: {tts_response.status_code} — {tts_response.text[:200]}")
+                    log.warning(f"ElevenLabs error: {tts_response.status_code} — falling back to Google TTS")
+                    voice_path = generate_google_tts(quote, tmp_files[0].replace("_scene0.jpg", "_voice.mp3"))
 
             except Exception as ve:
-                log.warning(f"Voiceover error: {ve}")
+                log.warning(f"ElevenLabs error: {ve} — falling back to Google TTS")
+                voice_path = generate_google_tts(quote, tmp_files[0].replace("_scene0.jpg", "_voice.mp3"))
         else:
-            log.info("No ELEVENLABS_KEY found — skipping voiceover")
+            log.info("No ELEVENLABS_KEY — using Google TTS")
+            voice_path = generate_google_tts(quote, tmp_files[0].replace("_scene0.jpg", "_voice.mp3"))
 
         # --- Build ffmpeg concat filter for smooth transitions ---
         # Each scene: zoom effect + crossfade to next
