@@ -636,11 +636,12 @@ def create_youtube_short(image_path: str, quote: str, output_path: str) -> str |
                 import subprocess as sp
                 music_cmd = [
                     "ffmpeg", "-y",
+                    "-ss", "10",       # skip first 10 seconds
                     "-i", chosen,
                     "-af", (
                         f"afade=t=in:st=0:d=3,"
                         f"afade=t=out:st={VIDEO_DURATION-4}:d=3,"
-                        f"volume=0.4"
+                        f"volume=0.9"   # louder volume
                     ),
                     "-t", str(VIDEO_DURATION),
                     "-ar", "44100",
@@ -775,7 +776,7 @@ def create_youtube_short(image_path: str, quote: str, output_path: str) -> str |
         if music_path and voice_path and os.path.exists(music_path) and os.path.exists(voice_path):
             # Mix music (quiet) + voiceover (loud) together
             audio_filter = (
-                f"[{music_idx}:a]volume=0.25,afade=t=in:st=0:d=2,afade=t=out:st={VIDEO_DURATION-3}:d=2[music];"
+                f"[{music_idx}:a]volume=0.6,afade=t=in:st=0:d=2,afade=t=out:st={VIDEO_DURATION-3}:d=2[music];"
                 f"[{voice_idx}:a]volume=2.0,adelay=8000|8000[voice];"  # voice starts at 8s
                 f"[music][voice]amix=inputs=2:duration=first:dropout_transition=2[aout]"
             )
@@ -803,7 +804,7 @@ def create_youtube_short(image_path: str, quote: str, output_path: str) -> str |
                 "-filter_complex", filter_complex,
                 "-map", "[vout]",
                 "-map", f"{music_idx}:a",
-                "-af", f"afade=t=in:st=0:d=2,afade=t=out:st={VIDEO_DURATION-3}:d=2,volume=0.35",
+                "-af", f"afade=t=in:st=0:d=2,afade=t=out:st={VIDEO_DURATION-3}:d=2,volume=0.9",
                 "-t", str(VIDEO_DURATION),
                 "-c:v", "libx264", "-c:a", "aac", "-b:a", "128k",
                 "-preset", "fast", "-crf", "22",
