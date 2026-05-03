@@ -614,6 +614,58 @@ def create_youtube_short(image_path: str, quote: str, output_path: str) -> str |
             log.warning(f"Music error: {me}")
             music_path = None
 
+        # --- Generate AI voiceover using ElevenLabs free API ---
+        ELEVENLABS_KEY = os.environ.get("ELEVENLABS_KEY", "")
+        voice_path = None
+
+        if ELEVENLABS_KEY:
+            try:
+                log.info(f"Generating voiceover: {quote}")
+
+                # Voice IDs — pick randomly for variety
+                voice_ids = [
+                    "pNInz6obpgDQGcFmaJgB",  # Adam — deep male
+                    "ErXwobaYiN019PkySvjV",  # Antoni — warm male
+                    "VR6AewLTigWG4xSOukaG",  # Arnold — strong male
+                    "EXAVITQu4vr4xnSDxMaL",  # Bella — soft female
+                    "21m00Tcm4TlvDq8ikWAM",  # Rachel — professional female
+                ]
+                voice_id = random.choice(voice_ids)
+
+                # Add dramatic pause and emphasis to quote
+                voice_text = f". . . {quote} . . .".strip()
+
+                tts_response = requests.post(
+                    f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
+                    headers={
+                        "xi-api-key": ELEVENLABS_KEY,
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "text": voice_text,
+                        "model_id": "eleven_monolingual_v1",
+                        "voice_settings": {
+                            "stability":        0.75,
+                            "similarity_boost": 0.85,
+                            "style":            0.3,
+                            "use_speaker_boost": True
+                        }
+                    },
+                    timeout=30
+                )
+
+                if tts_response.status_code == 200:
+                    voice_path = tmp_files[0].replace("_scene0.jpg", "_voice.mp3")
+                    open(voice_path, "wb").write(tts_response.content)
+                    log.info(f"Voiceover generated ({len(tts_response.content)//1024}KB)")
+                else:
+                    log.warning(f"ElevenLabs error: {tts_response.status_code} — {tts_response.text[:200]}")
+
+            except Exception as ve:
+                log.warning(f"Voiceover error: {ve}")
+        else:
+            log.info("No ELEVENLABS_KEY found — skipping voiceover")
+
         # --- Build ffmpeg concat filter for smooth transitions ---
         # Each scene: zoom effect + crossfade to next
         inputs = []
@@ -658,11 +710,46 @@ def create_youtube_short(image_path: str, quote: str, output_path: str) -> str |
         filter_complex = ";".join(filter_parts[:-2]) + ";" + "".join(filter_parts[-2:])
 
         # Build full ffmpeg command
-        if music_path:
-            music_idx = len(tmp_files)
+        # Build audio inputs and mixing
+        audio_inputs  = []
+        audio_filters = []
+
+        if music_path and os.path.exists(music_path):
+            audio_inputs += ["-i", music_path]
+            music_idx     = len(tmp_files)
+
+        if voice_path and os.path.exists(voice_path):
+            audio_inputs += ["-i", voice_path]
+            voice_idx     = len(tmp_files) + (1 if music_path else 0)
+
+        if music_path and voice_path and os.path.exists(music_path) and os.path.exists(voice_path):
+            # Mix music (quiet) + voiceover (loud) together
+            audio_filter = (
+                f"[{music_idx}:a]volume=0.25,afade=t=in:st=0:d=2,afade=t=out:st={VIDEO_DURATION-3}:d=2[music];"
+                f"[{voice_idx}:a]volume=2.0,adelay=8000|8000[voice];"  # voice starts at 8s
+                f"[music][voice]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+            )
             cmd = [
                 "ffmpeg", "-y",
                 *inputs,
+                *audio_inputs,
+                "-filter_complex", filter_complex + ";" + audio_filter,
+                "-map", "[vout]",
+                "-map", "[aout]",
+                "-t", str(VIDEO_DURATION),
+                "-c:v", "libx264", "-c:a", "aac", "-b:a", "128k",
+                "-preset", "fast", "-crf", "22",
+                "-pix_fmt", "yuv420p",
+                output_path
+            ]
+            log.info("Mixing music + voiceover")
+
+        elif music_path and os.path.exists(music_path):
+            # Music only
+            cmd = [
+                "ffmpeg", "-y",
+                *inputs,
+                *audio_inputs,
                 "-filter_complex", filter_complex,
                 "-map", "[vout]",
                 "-map", f"{music_idx}:a",
@@ -673,7 +760,10 @@ def create_youtube_short(image_path: str, quote: str, output_path: str) -> str |
                 "-pix_fmt", "yuv420p",
                 output_path
             ]
+            log.info("Using music only")
+
         else:
+            # No audio
             cmd = [
                 "ffmpeg", "-y",
                 *inputs,
@@ -685,6 +775,7 @@ def create_youtube_short(image_path: str, quote: str, output_path: str) -> str |
                 "-pix_fmt", "yuv420p",
                 output_path
             ]
+            log.info("No audio — silent video")
 
         log.info("Rendering cinematic video...")
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
@@ -695,6 +786,9 @@ def create_youtube_short(image_path: str, quote: str, output_path: str) -> str |
             except: pass
         if music_path:
             try: os.unlink(music_path)
+            except: pass
+        if voice_path:
+            try: os.unlink(voice_path)
             except: pass
 
         if result.returncode == 0:
