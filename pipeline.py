@@ -636,7 +636,7 @@ def create_youtube_short(image_path: str, quote: str, output_path: str) -> str |
                 import subprocess as sp
                 music_cmd = [
                     "ffmpeg", "-y",
-                    "-ss", "10",       # skip first 10 seconds
+                    "-ss", "30",       # skip first 30 seconds
                     "-i", chosen,
                     "-af", (
                         f"afade=t=in:st=0:d=3,"
