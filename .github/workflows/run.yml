@@ -39,7 +39,8 @@ jobs:
 
       - name: Run pipeline
         env:
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-          YOUTUBE_TOKEN:   ${{ secrets.YOUTUBE_TOKEN }}
-          HF_TOKEN:        ${{ secrets.HF_TOKEN }}
+          YOUTUBE_API_KEY:  ${{ secrets.YOUTUBE_API_KEY }}
+          YOUTUBE_TOKEN:    ${{ secrets.YOUTUBE_TOKEN }}
+          HF_TOKEN:         ${{ secrets.HF_TOKEN }}
+          ELEVENLABS_KEY:   ${{ secrets.ELEVENLABS_KEY }}
         run: python pipeline.py --once
