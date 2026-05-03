@@ -643,7 +643,7 @@ def create_youtube_short(image_path: str, quote: str, output_path: str) -> str |
                     },
                     json={
                         "text": voice_text,
-                        "model_id": "eleven_monolingual_v1",
+                        "model_id": "eleven_turbo_v2_5",
                         "voice_settings": {
                             "stability":        0.75,
                             "similarity_boost": 0.85,
