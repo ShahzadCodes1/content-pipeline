@@ -336,11 +336,8 @@ def generate_text_content(trend_prompt: str):
     else:
         category = all_scenes
 
-    if not category:
-        category = all_scenes
-
-    # Always pick randomly from category so no two videos are the same
-    pool = random.sample(category, min(5, len(category)))
+    # Always pick fully random from entire pool — maximum variety every run
+    pool = random.sample(all_scenes, min(8, len(all_scenes)))
 
     image_prompt, quote = random.choice(pool)
     log.info("Content selected via keyword matching")
@@ -573,21 +570,20 @@ def create_youtube_short(image_path: str, quote: str, output_path: str) -> str |
         music_path = tmp_files[0].replace("_scene0.jpg", "_music.mp3")
 
         # Pick a random music style each run
-        # Music styles — each uses simple sine wave combinations via ffmpeg lavfi
+        # Generate cinematic ambient music using ffmpeg anoisesrc
+        # anoisesrc = built-in ffmpeg noise generator, always works
         music_styles = [
-            ("deep bass pulse",     "55",   "0.5"),
-            ("cinematic strings",   "220",  "0.4"),
-            ("luxury ambient",      "130",  "0.35"),
-            ("motivational build",  "174",  "0.45"),
-            ("epic low drone",      "65",   "0.5"),
-            ("bright piano",        "261",  "0.4"),
-            ("deep cello",          "98",   "0.45"),
-            ("ambient pad",         "146",  "0.35"),
+            ("deep cinematic",   "brown", "150", "2.5"),
+            ("luxury ambient",   "pink",  "200", "2.0"),
+            ("epic drone",       "brown", "100", "3.0"),
+            ("motivational",     "pink",  "300", "2.5"),
+            ("dark thriller",    "brown", "80",  "3.0"),
+            ("soft inspiration", "pink",  "400", "2.0"),
+            ("cosmic ambient",   "brown", "120", "2.5"),
+            ("power build",      "pink",  "250", "3.0"),
         ]
 
-        style_name, freq, vol = random.choice(music_styles)
-        freq2 = str(int(float(freq) * 1.5))
-        freq3 = str(int(float(freq) * 2.0))
+        style_name, noise_color, bandpass_freq, vol = random.choice(music_styles)
         log.info(f"Generating music style: {style_name}")
 
         try:
@@ -595,31 +591,27 @@ def create_youtube_short(image_path: str, quote: str, output_path: str) -> str |
             music_cmd = [
                 "ffmpeg", "-y",
                 "-f", "lavfi",
-                "-i", f"sine=frequency={freq}:duration={VIDEO_DURATION}",
-                "-f", "lavfi",
-                "-i", f"sine=frequency={freq2}:duration={VIDEO_DURATION}",
-                "-f", "lavfi",
-                "-i", f"sine=frequency={freq3}:duration={VIDEO_DURATION}",
-                "-filter_complex",
-                f"[0:a]volume=0.5[a0];[1:a]volume=0.3[a1];[2:a]volume=0.15[a2];"
-                f"[a0][a1][a2]amix=inputs=3:duration=longest,"
-                f"aecho=0.8:0.7:60:0.3,"
-                f"afade=t=in:st=0:d=3,"
-                f"afade=t=out:st={VIDEO_DURATION-4}:d=3,"
-                f"volume={vol}",
+                "-i", f"anoisesrc=color={noise_color}:duration={VIDEO_DURATION}",
+                "-af", (
+                    f"bandpass=f={bandpass_freq}:width_type=o:w=2,"
+                    f"afade=t=in:st=0:d=4,"
+                    f"afade=t=out:st={VIDEO_DURATION-5}:d=4,"
+                    f"volume={vol}"
+                ),
                 "-t", str(VIDEO_DURATION),
+                "-ar", "44100",
                 "-c:a", "libmp3lame",
-                "-q:a", "4",
+                "-q:a", "3",
                 music_path
             ]
             result_music = sp.run(music_cmd, capture_output=True, text=True, timeout=60)
-            if result_music.returncode != 0 or not os.path.exists(music_path):
-                log.warning(f"Music generation failed: {result_music.stderr[-300:]}")
-                music_path = None
-            else:
+            if result_music.returncode == 0 and os.path.exists(music_path) and os.path.getsize(music_path) > 1000:
                 log.info(f"Music generated: {style_name} ({os.path.getsize(music_path)//1024}KB)")
+            else:
+                log.warning(f"Music failed: {result_music.stderr[-200:]}")
+                music_path = None
         except Exception as me:
-            log.warning(f"Music generation error: {me}")
+            log.warning(f"Music error: {me}")
             music_path = None
 
         # --- Build ffmpeg concat filter for smooth transitions ---
